@@ -22,6 +22,7 @@ import {
 
 const Dashboard = () => {
   const [trades, setTrades] = useState([]);
+  const [isLoading, setIsLoading] = useState(true); // Added for Loading state
   const [filterAsset, setFilterAsset] = useState("XAUUSD");
   const [filterStrategy, setFilterStrategy] = useState("All");
   const [filterStatus, setFilterStatus] = useState("All");
@@ -31,6 +32,8 @@ const Dashboard = () => {
   const [endDate, setEndDate] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isStrategyOpen, setIsStrategyOpen] = useState(true);
+
+  const baseurl = "https://trademangerbk.onrender.com";
 
   // LOT SIZE CONFIGURATION
   const assetConfigs = {
@@ -52,7 +55,7 @@ const Dashboard = () => {
       "GOLD",
       "SILVER",
     ];
-    if (assetName === "All" || !assetName) return "₹"; // Default to Indian if multiple/none
+    if (assetName === "All" || !assetName) return "₹"; 
     return indianAssets.includes(assetName.toUpperCase()) ? "₹" : "$";
   };
 
@@ -62,9 +65,8 @@ const Dashboard = () => {
 
   useEffect(() => {
     const fetchNote = async () => {
-      // Only fetch if a specific asset/strategy is selected, or handle 'All' as a general note
       try {
-        const res = await axios.get(`http://localhost:5001/api/notes`, {
+        const res = await axios.get(`${baseurl}/api/notes`, {
           params: {
             asset: filterAsset,
             strategy: filterStrategy,
@@ -87,7 +89,7 @@ const Dashboard = () => {
     };
 
     fetchNote();
-  }, [filterAsset, filterStrategy]); // Re-run whenever filters change
+  }, [filterAsset, filterStrategy]); 
 
   useEffect(() => {
     const now = new Date();
@@ -104,10 +106,13 @@ const Dashboard = () => {
   useEffect(() => {
     const fetchTrades = async () => {
       try {
-        const res = await axios.get("http://localhost:5001/api/trades");
+        setIsLoading(true); // Trigger loading
+        const res = await axios.get(`${baseurl}/api/trades`);
         setTrades(res.data);
       } catch (err) {
         console.error("Error fetching trades", err);
+      } finally {
+        setIsLoading(false); // Stop loading
       }
     };
     fetchTrades();
@@ -135,11 +140,8 @@ const Dashboard = () => {
     return (trade.profitPoints || 0) * lotSize;
   };
 
-  // --- NEW: MAX EQUITY DRAWDOWN FUNCTION ---
   const calculateMaxDrawdown = () => {
     if (filteredTrades.length === 0) return 0;
-
-    // Sort trades chronologically for equity curve
     const sortedTrades = [...filteredTrades].sort(
       (a, b) =>
         new Date(a.entryTime || a.timestamp) -
@@ -153,11 +155,9 @@ const Dashboard = () => {
     sortedTrades.forEach((trade) => {
       currentEquity += calculateFinalPnL(trade);
       if (currentEquity > peak) peak = currentEquity;
-
       const drawdown = peak - currentEquity;
       if (drawdown > maxDD) maxDD = drawdown;
     });
-
     return maxDD;
   };
 
@@ -179,6 +179,27 @@ const Dashboard = () => {
     ...new Set(trades.map((t) => t.strategyName).filter(Boolean)),
   ];
   const uniqueAssets = [...new Set(trades.map((t) => t.asset).filter(Boolean))];
+
+  // --- LOADING UI ---
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center w-full h-screen bg-[#0f172a] text-slate-200">
+        <div className="relative flex items-center justify-center">
+          <div className="absolute w-24 h-24 border-4 border-emerald-500/20 rounded-full animate-ping"></div>
+          <div className="w-16 h-16 border-4 border-t-emerald-500 border-r-transparent border-b-emerald-500/10 border-l-transparent rounded-full animate-spin"></div>
+          <div className="absolute bg-emerald-500 p-2 rounded-lg">
+            <Activity size={24} className="text-white" />
+          </div>
+        </div>
+        <h2 className="mt-8 text-xl font-bold tracking-tighter text-white animate-pulse">
+          Syncing PineConnect
+        </h2>
+        <p className="mt-2 text-slate-500 text-[10px] uppercase tracking-[0.3em] font-black">
+          Waking up Render backend...
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex w-full h-screen bg-[#0f172a] text-slate-200 font-sans relative overflow-hidden">
@@ -292,7 +313,7 @@ const Dashboard = () => {
               Asset
             </label>
             <select
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-sm text-white"
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-sm text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
               value={filterAsset}
               onChange={(e) => setFilterAsset(e.target.value)}
             >
@@ -309,7 +330,7 @@ const Dashboard = () => {
               Trade Status
             </label>
             <select
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-sm text-white"
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-sm text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
             >
@@ -323,7 +344,6 @@ const Dashboard = () => {
               Date Range Window
             </label>
             <div className="flex items-center gap-2">
-              {/* Added showPicker on Click and color-scheme dark to fix black icon */}
               <div
                 className={`flex-1 flex items-center bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 cursor-pointer ${showAllTime ? "opacity-30 cursor-not-allowed" : ""}`}
                 onClick={(e) =>
@@ -361,7 +381,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* STATS - Currency Dynamic based on activeCurrency */}
+        {/* STATS */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6 flex-shrink-0">
           <StatCard
             title={`Net Profit (${showAllTime ? "Total" : "Month"})`}
@@ -379,7 +399,6 @@ const Dashboard = () => {
             value={filteredTrades.length}
             icon={<Activity className="text-purple-400" />}
           />
-          {/* Change 1: Max Equity Drawdown */}
           <StatCard
             title="Max Equity Drawdown"
             value={`${activeCurrency}${maxDrawdown.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
