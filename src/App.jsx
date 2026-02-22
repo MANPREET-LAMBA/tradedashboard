@@ -39,8 +39,8 @@ const Dashboard = () => {
     GOLD: 100,
     SILVER: 5000,
     CRUDEOIL: 100,
-    NIFTY: 75,
-    BANKNIFTY: 15,
+    NIFTY: 65,
+    BANKNIFTY: 30,
     BTCUSD: 1,
   };
 
