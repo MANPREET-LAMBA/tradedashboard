@@ -23,7 +23,7 @@ import {
 const Dashboard = () => {
   const [trades, setTrades] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [filterAsset, setFilterAsset] = useState("XAUUSD");
+  const [filterAsset, setFilterAsset] = useState("All");
   const [filterStrategy, setFilterStrategy] = useState("Trend Algo");
   const [filterStatus, setFilterStatus] = useState("All");
   const [showAllTime, setShowAllTime] = useState(false);
