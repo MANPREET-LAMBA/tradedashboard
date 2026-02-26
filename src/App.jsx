@@ -24,7 +24,7 @@ const Dashboard = () => {
   const [trades, setTrades] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filterAsset, setFilterAsset] = useState("All");
-  const [filterStrategy, setFilterStrategy] = useState("Trend Algo");
+  const [filterStrategy, setFilterStrategy] = useState("All");
   const [filterStatus, setFilterStatus] = useState("All");
   const [showAllTime, setShowAllTime] = useState(false);
 
@@ -37,6 +37,24 @@ const Dashboard = () => {
 
   const baseurl = "https://trademangerbk.onrender.com";
   // const baseurl = "http://localhost:5001";
+
+  const [uniqueStrategies,uniqueStrategiesset] = useState([]);
+
+  useEffect(()=>{
+   const strategy = async ()=>{
+     try {
+      const allstrategy = await axios.get(`${baseurl}/api/allStrategy`);
+      console.log(allstrategy);
+      
+      uniqueStrategiesset(allstrategy)
+    } catch (error) {
+      
+    }
+   }
+  })
+
+    
+
 
   const assetConfigs = {
     GOLD: 100,
@@ -211,9 +229,8 @@ const Dashboard = () => {
           filteredTrades.length) *
         100
       : 0;
-  const uniqueStrategies = [
-    ...new Set(trades.map((t) => t.strategyName).filter(Boolean)),
-  ];
+
+
   const uniqueAssets = [...new Set(trades.map((t) => t.asset).filter(Boolean))];
 
   if (isLoading) {
