@@ -35,8 +35,8 @@ const Dashboard = () => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true); // You'll need this for pagination later
 
-  // const baseurl = "https://trademangerbk.onrender.com";
-  const baseurl = "http://localhost:5001";
+  const baseurl = "https://trademangerbk.onrender.com";
+  // const baseurl = "http://localhost:5001";
 
   const assetConfigs = {
     GOLD: 100,
