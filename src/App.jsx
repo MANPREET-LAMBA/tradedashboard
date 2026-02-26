@@ -24,7 +24,7 @@ const Dashboard = () => {
   const [trades, setTrades] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filterAsset, setFilterAsset] = useState("XAUUSD");
-  const [filterStrategy, setFilterStrategy] = useState("All");
+  const [filterStrategy, setFilterStrategy] = useState("Trend Algo");
   const [filterStatus, setFilterStatus] = useState("All");
   const [showAllTime, setShowAllTime] = useState(false);
 
@@ -32,8 +32,11 @@ const Dashboard = () => {
   const [endDate, setEndDate] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isStrategyOpen, setIsStrategyOpen] = useState(true);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true); // You'll need this for pagination later
 
-  const baseurl = "https://trademangerbk.onrender.com";
+  // const baseurl = "https://trademangerbk.onrender.com";
+  const baseurl = "http://localhost:5001";
 
   const assetConfigs = {
     GOLD: 100,
@@ -45,12 +48,22 @@ const Dashboard = () => {
   };
 
   const getCurrency = (assetName) => {
-    const indianAssets = ["NIFTY", "BANKNIFTY", "FINNIFTY", "CRUDEOIL", "GOLD", "SILVER"];
-    if (assetName === "All" || !assetName) return "₹"; 
+    const indianAssets = [
+      "NIFTY",
+      "BANKNIFTY",
+      "FINNIFTY",
+      "CRUDEOIL",
+      "GOLD",
+      "SILVER",
+      "NATURAL GAS"
+    ];
+    if (assetName === "All" || !assetName) return "₹";
     return indianAssets.includes(assetName.toUpperCase()) ? "₹" : "$";
   };
 
-  const [strategyNote, setStrategyNote] = useState("Select a strategy to view analysis notes.");
+  const [strategyNote, setStrategyNote] = useState(
+    "Select a strategy to view analysis notes.",
+  );
 
   useEffect(() => {
     const fetchNote = async () => {
@@ -61,10 +74,14 @@ const Dashboard = () => {
         if (res.data && res.data.note) {
           setStrategyNote(res.data.note);
         } else {
-          setStrategyNote(`No specific notes found for ${filterStrategy} on ${filterAsset}.`);
+          setStrategyNote(
+            `No specific notes found for ${filterStrategy} on ${filterAsset}.`,
+          );
         }
       } catch (err) {
-        setStrategyNote("Analysis period active. Data being updated via webhook.");
+        setStrategyNote(
+          "Analysis period active. Data being updated via webhook.",
+        );
       }
     };
     fetchNote();
@@ -72,26 +89,57 @@ const Dashboard = () => {
 
   useEffect(() => {
     const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
+      .toISOString()
+      .split("T")[0];
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+      .toISOString()
+      .split("T")[0];
     setStartDate(firstDay);
     setEndDate(lastDay);
   }, []);
 
   useEffect(() => {
+    // Define the function INSIDE the effect or wrap it in useCallback
     const fetchTrades = async () => {
       try {
         setIsLoading(true);
-        const res = await axios.get(`${baseurl}/api/trades`);
-        setTrades(res.data);
+        const res = await axios.get(`${baseurl}/api/trades`, {
+          params: {
+            page: page, // Now 'page' is defined
+            limit: 50,
+            asset: filterAsset,
+            strategy: filterStrategy,
+            status: filterStatus,
+            startDate,
+            endDate,
+          },
+        });
+
+        setTrades(res.data.trades);
+        console.log(res.data.trades);
+        
+        if (res.data.hasMore !== undefined) setHasMore(res.data.hasMore);
       } catch (err) {
         console.error("Error fetching trades", err);
       } finally {
         setIsLoading(false);
       }
     };
+
     fetchTrades();
-  }, []);
+    // Adding dependencies ensures data refreshes when filters change
+  }, [
+    page,
+    filterAsset,
+    filterStrategy,
+    filterStatus,
+    startDate,
+    endDate,
+    baseurl,
+  ]);
+
+ 
 
   const calculateFinalPnL = (trade) => {
     const lotSize = assetConfigs[trade.asset?.toUpperCase()] || 1;
@@ -100,13 +148,20 @@ const Dashboard = () => {
 
   const filteredTrades = trades.filter((t) => {
     const matchAsset = filterAsset === "All" || t.asset === filterAsset;
-    const matchStrategy = filterStrategy === "All" || t.strategyName === filterStrategy;
+    const matchStrategy =
+      filterStrategy === "All" || t.strategyName === filterStrategy;
     const matchStatus = filterStatus === "All" || t.status === filterStatus;
     if (showAllTime) return matchAsset && matchStrategy && matchStatus;
     const tradeTime = new Date(t.entryTime || t.timestamp).getTime();
     const start = startDate ? new Date(startDate).setHours(0, 0, 0, 0) : null;
     const end = endDate ? new Date(endDate).setHours(23, 59, 59, 999) : null;
-    return matchAsset && matchStrategy && matchStatus && (!start || tradeTime >= start) && (!end || tradeTime <= end);
+    return (
+      matchAsset &&
+      matchStrategy &&
+      matchStatus &&
+      (!start || tradeTime >= start) &&
+      (!end || tradeTime <= end)
+    );
   });
 
   // --- NEW: CALCULATE MAX LOSS OF A DAY ---
@@ -114,18 +169,26 @@ const Dashboard = () => {
     if (filteredTrades.length === 0) return 0;
     const dailyPnL = {};
     filteredTrades.forEach((trade) => {
-      const date = new Date(trade.entryTime || trade.timestamp).toLocaleDateString();
+      const date = new Date(
+        trade.entryTime || trade.timestamp,
+      ).toLocaleDateString();
       const pnl = calculateFinalPnL(trade);
       dailyPnL[date] = (dailyPnL[date] || 0) + pnl;
     });
-    const losses = Object.values(dailyPnL).filter(pnl => pnl < 0);
+    const losses = Object.values(dailyPnL).filter((pnl) => pnl < 0);
     return losses.length > 0 ? Math.min(...losses) : 0;
   };
 
   const calculateMaxDrawdown = () => {
     if (filteredTrades.length === 0) return 0;
-    const sortedTrades = [...filteredTrades].sort((a, b) => new Date(a.entryTime || a.timestamp) - new Date(b.entryTime || b.timestamp));
-    let peak = 0, currentEquity = 0, maxDD = 0;
+    const sortedTrades = [...filteredTrades].sort(
+      (a, b) =>
+        new Date(a.entryTime || a.timestamp) -
+        new Date(b.entryTime || b.timestamp),
+    );
+    let peak = 0,
+      currentEquity = 0,
+      maxDD = 0;
     sortedTrades.forEach((trade) => {
       currentEquity += calculateFinalPnL(trade);
       if (currentEquity > peak) peak = currentEquity;
@@ -135,12 +198,22 @@ const Dashboard = () => {
     return maxDD;
   };
 
-  const totalPnL = filteredTrades.reduce((acc, curr) => acc + calculateFinalPnL(curr), 0);
+  const totalPnL = filteredTrades.reduce(
+    (acc, curr) => acc + calculateFinalPnL(curr),
+    0,
+  );
   const maxDrawdown = calculateMaxDrawdown();
   const maxDailyLoss = calculateMaxDailyLoss();
   const activeCurrency = getCurrency(filterAsset);
-  const winRate = filteredTrades.length > 0 ? (filteredTrades.filter((t) => t.profitPoints > 0).length / filteredTrades.length) * 100 : 0;
-  const uniqueStrategies = [...new Set(trades.map((t) => t.strategyName).filter(Boolean))];
+  const winRate =
+    filteredTrades.length > 0
+      ? (filteredTrades.filter((t) => t.profitPoints > 0).length /
+          filteredTrades.length) *
+        100
+      : 0;
+  const uniqueStrategies = [
+    ...new Set(trades.map((t) => t.strategyName).filter(Boolean)),
+  ];
   const uniqueAssets = [...new Set(trades.map((t) => t.asset).filter(Boolean))];
 
   if (isLoading) {
@@ -149,39 +222,84 @@ const Dashboard = () => {
         <div className="relative flex items-center justify-center">
           <div className="absolute w-24 h-24 border-4 border-emerald-500/20 rounded-full animate-ping"></div>
           <div className="w-16 h-16 border-4 border-t-emerald-500 border-r-transparent border-b-emerald-500/10 border-l-transparent rounded-full animate-spin"></div>
-          <div className="absolute bg-emerald-500 p-2 rounded-lg"><Activity size={24} className="text-white" /></div>
+          <div className="absolute bg-emerald-500 p-2 rounded-lg">
+            <Activity size={24} className="text-white" />
+          </div>
         </div>
-        <h2 className="mt-8 text-xl font-bold tracking-tighter text-white animate-pulse">Syncing PineConnect</h2>
-        <p className="mt-2 text-slate-500 text-[10px] uppercase tracking-[0.3em] font-black">Waking up Render backend...</p>
+        <h2 className="mt-8 text-xl font-bold tracking-tighter text-white animate-pulse">
+          Syncing PineConnect
+        </h2>
+        <p className="mt-2 text-slate-500 text-[10px] uppercase tracking-[0.3em] font-black">
+          Waking up Render backend...
+        </p>
       </div>
     );
   }
 
   return (
     <div className="flex w-full min-h-screen lg:h-screen bg-[#0f172a] text-slate-200 font-sans relative overflow-x-hidden">
-      {isSidebarOpen && <div className="fixed inset-0 bg-black/60 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)} />}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 z-40 lg:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
 
       {/* SIDEBAR */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#1e293b] border-r border-slate-700 flex flex-col transform transition-transform duration-300 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#1e293b] border-r border-slate-700 flex flex-col transform transition-transform duration-300 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
+      >
         <div className="p-6 flex items-center justify-between border-b border-slate-700">
           <div className="flex items-center gap-2">
-            <div className="bg-emerald-500 p-1.5 rounded-lg"><Activity size={20} className="text-white" /></div>
-            <span className="text-xl font-bold text-white tracking-tight">PineConnect</span>
+            <div className="bg-emerald-500 p-1.5 rounded-lg">
+              <Activity size={20} className="text-white" />
+            </div>
+            <span className="text-xl font-bold text-white tracking-tight">
+              PineConnect
+            </span>
           </div>
-          <button className="lg:hidden text-slate-400" onClick={() => setIsSidebarOpen(false)}><X size={20} /></button>
+          <button
+            className="lg:hidden text-slate-400"
+            onClick={() => setIsSidebarOpen(false)}
+          >
+            <X size={20} />
+          </button>
         </div>
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          <div className="flex items-center gap-3 p-3 bg-emerald-500/10 text-emerald-400 rounded-xl cursor-pointer font-bold"><LayoutDashboard size={18} /><span>Dashboard</span></div>
+          <div className="flex items-center gap-3 p-3 bg-emerald-500/10 text-emerald-400 rounded-xl cursor-pointer font-bold">
+            <LayoutDashboard size={18} />
+            <span>Dashboard</span>
+          </div>
           <div>
-            <button onClick={() => setIsStrategyOpen(!isStrategyOpen)} className="w-full flex items-center justify-between p-3 hover:bg-slate-700/50 rounded-xl transition-all">
-              <div className="flex items-center gap-3"><Target size={18} /> <span className="font-medium">Strategies</span></div>
-              <ChevronDown size={16} className={`transform transition-transform ${isStrategyOpen ? "rotate-180" : ""}`} />
+            <button
+              onClick={() => setIsStrategyOpen(!isStrategyOpen)}
+              className="w-full flex items-center justify-between p-3 hover:bg-slate-700/50 rounded-xl transition-all"
+            >
+              <div className="flex items-center gap-3">
+                <Target size={18} />{" "}
+                <span className="font-medium">Strategies</span>
+              </div>
+              <ChevronDown
+                size={16}
+                className={`transform transition-transform ${isStrategyOpen ? "rotate-180" : ""}`}
+              />
             </button>
             {isStrategyOpen && (
               <div className="mt-1 ml-4 border-l border-slate-700 pl-4 space-y-1">
-                <button onClick={() => setFilterStrategy("All")} className={`w-full text-left p-2 text-sm rounded-lg ${filterStrategy === "All" ? "text-emerald-400 font-bold bg-emerald-500/5" : "text-slate-400 hover:text-white"}`}>All Strategies</button>
+                <button
+                  onClick={() => setFilterStrategy("All")}
+                  className={`w-full text-left p-2 text-sm rounded-lg ${filterStrategy === "All" ? "text-emerald-400 font-bold bg-emerald-500/5" : "text-slate-400 hover:text-white"}`}
+                >
+                  All Strategies
+                </button>
                 {uniqueStrategies.map((s) => (
-                  <button key={s} onClick={() => setFilterStrategy(s)} className={`w-full text-left p-2 text-sm rounded-lg ${filterStrategy === s ? "text-emerald-400 font-bold bg-emerald-500/5" : "text-slate-400 hover:text-white"}`}>{s}</button>
+                  <button
+                    key={s}
+                    onClick={() => setFilterStrategy(s)}
+                    className={`w-full text-left p-2 text-sm rounded-lg ${filterStrategy === s ? "text-emerald-400 font-bold bg-emerald-500/5" : "text-slate-400 hover:text-white"}`}
+                  >
+                    {s}
+                  </button>
                 ))}
               </div>
             )}
@@ -192,66 +310,150 @@ const Dashboard = () => {
       {/* MAIN CONTENT */}
       <main className="flex-1 flex flex-col min-w-0 p-4 lg:p-8 lg:overflow-hidden relative">
         <header className="flex justify-between items-center mb-6 flex-shrink-0">
-          <button className="lg:hidden p-2 bg-slate-800 rounded-lg mr-4" onClick={() => setIsSidebarOpen(true)}><Menu size={24} /></button>
+          <button
+            className="lg:hidden p-2 bg-slate-800 rounded-lg mr-4"
+            onClick={() => setIsSidebarOpen(true)}
+          >
+            <Menu size={24} />
+          </button>
           <div className="flex-1">
-            <h2 className="text-xl lg:text-2xl font-bold text-white tracking-tight">Strategy Performance</h2>
-            <p className="text-slate-400 text-xs lg:text-sm italic">Real-time Execution Journal</p>
+            <h2 className="text-xl lg:text-2xl font-bold text-white tracking-tight">
+              Strategy Performance
+            </h2>
+            <p className="text-slate-400 text-xs lg:text-sm italic">
+              Real-time Execution Journal
+            </p>
           </div>
         </header>
 
         {/* FILTERS */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6 bg-[#1e293b]/50 p-4 rounded-2xl border border-slate-700 backdrop-blur-md flex-shrink-0">
           <div className="space-y-1">
-            <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest ml-1">Asset</label>
-            <select className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-sm text-white focus:ring-2 focus:ring-emerald-500 outline-none" value={filterAsset} onChange={(e) => setFilterAsset(e.target.value)}>
+            <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest ml-1">
+              Asset
+            </label>
+            <select
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-sm text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+              value={filterAsset}
+              onChange={(e) => setFilterAsset(e.target.value)}
+            >
               <option value="All">All Assets</option>
-              {uniqueAssets.map((a) => <option key={a} value={a}>{a}</option>)}
+              {uniqueAssets.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
             </select>
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest ml-1">Trade Status</label>
-            <select className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-sm text-white focus:ring-2 focus:ring-emerald-500 outline-none" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+            <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest ml-1">
+              Trade Status
+            </label>
+            <select
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-sm text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+            >
               <option value="All">All Signals</option>
               <option value="open">Open (Entries)</option>
               <option value="closed">Closed (Exits)</option>
             </select>
           </div>
           <div className="sm:col-span-2 space-y-1">
-            <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest ml-1">Date Range Window</label>
+            <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest ml-1">
+              Date Range Window
+            </label>
             <div className="flex items-center gap-2">
-              <input type="date" disabled={showAllTime} value={startDate} onChange={(e) => setStartDate(e.target.value)} style={{ colorScheme: "dark" }} className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none cursor-pointer" />
+              <input
+                type="date"
+                disabled={showAllTime}
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                style={{ colorScheme: "dark" }}
+                className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none cursor-pointer"
+              />
               <span className="text-slate-600 font-bold text-xs">to</span>
-              <input type="date" disabled={showAllTime} value={endDate} onChange={(e) => setEndDate(e.target.value)} style={{ colorScheme: "dark" }} className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none cursor-pointer" />
+              <input
+                type="date"
+                disabled={showAllTime}
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                style={{ colorScheme: "dark" }}
+                className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none cursor-pointer"
+              />
             </div>
           </div>
         </div>
 
         {/* STATS - Now includes Max Daily Loss */}
         <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6 flex-shrink-0">
-          <StatCard title="Net Profit" value={`${activeCurrency}${totalPnL.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<TrendingUp className="text-emerald-400" />} />
-          <StatCard title="Win Rate" value={`${winRate.toFixed(1)}%`} icon={<Target className="text-blue-400" />} />
-          <StatCard title="Signals" value={filteredTrades.length} icon={<Activity className="text-purple-400" />} />
-          <StatCard title="Max Drawdown" value={`${activeCurrency}${maxDrawdown.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<TrendingDown className="text-rose-400" />} />
+          <StatCard
+            title="Net Profit"
+            value={`${activeCurrency}${totalPnL.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+            icon={<TrendingUp className="text-emerald-400" />}
+          />
+          <StatCard
+            title="Win Rate"
+            value={`${winRate.toFixed(1)}%`}
+            icon={<Target className="text-blue-400" />}
+          />
+          <StatCard
+            title="Signals"
+            value={filteredTrades.length}
+            icon={<Activity className="text-purple-400" />}
+          />
+          <StatCard
+            title="Max Drawdown"
+            value={`${activeCurrency}${maxDrawdown.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+            icon={<TrendingDown className="text-rose-400" />}
+          />
           {/* New Stat Card */}
-          <StatCard title="Max Daily Loss" value={`${activeCurrency}${Math.abs(maxDailyLoss).toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<Zap className="text-orange-400" />} trend="Risk" />
+          <StatCard
+            title="Max Daily Loss"
+            value={`${activeCurrency}${Math.abs(maxDailyLoss).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+            icon={<Zap className="text-orange-400" />}
+            trend="Risk"
+          />
         </div>
 
         {/* STRATEGY NOTE SECTION */}
         <div className="mb-6 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl flex-shrink-0 transition-all">
           <div className="flex items-center gap-2 mb-1">
             <Info size={14} className="text-emerald-400" />
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">STRATEGY NOTE</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">
+              STRATEGY NOTE
+            </span>
           </div>
-          <p className="text-sm text-slate-400 leading-relaxed italic">{strategyNote}</p>
+          <p className="text-sm text-slate-400 leading-relaxed italic">
+            {strategyNote}
+          </p>
         </div>
 
         {/* DATA TABLE AREA */}
         <div className="lg:flex-1 lg:min-h-0 bg-[#1e293b] rounded-2xl border border-slate-700 flex flex-col shadow-2xl overflow-hidden mb-10 lg:mb-0">
           <div className="p-5 border-b border-slate-700 flex justify-between items-center bg-slate-800/20 flex-shrink-0">
-            <h3 className="font-black text-white text-[10px] tracking-[0.2em] uppercase">Market Execution Log</h3>
+            <h3 className="font-black text-white text-[10px] tracking-[0.2em] uppercase">
+              Market Execution Log
+            </h3>
             <div className="flex gap-2">
-              <button onClick={() => setShowAllTime(!showAllTime)} className={`flex items-center gap-2 text-[10px] px-4 py-1.5 rounded-lg uppercase font-black transition-all border ${showAllTime ? "bg-emerald-500 text-white border-emerald-400" : "bg-slate-800 text-slate-400 border-slate-700"}`}><Eye size={12} /> {showAllTime ? "All Time" : "History"}</button>
-              <button onClick={() => { setStartDate(""); setEndDate(""); setFilterAsset("All"); setFilterStrategy("All"); setShowAllTime(false); }} className="text-[10px] bg-slate-800 hover:bg-slate-700 px-4 py-1.5 rounded-lg text-slate-400 uppercase font-black border border-slate-700">Reset</button>
+              <button
+                onClick={() => setShowAllTime(!showAllTime)}
+                className={`flex items-center gap-2 text-[10px] px-4 py-1.5 rounded-lg uppercase font-black transition-all border ${showAllTime ? "bg-emerald-500 text-white border-emerald-400" : "bg-slate-800 text-slate-400 border-slate-700"}`}
+              >
+                <Eye size={12} /> {showAllTime ? "All Time" : "History"}
+              </button>
+              <button
+                onClick={() => {
+                  setStartDate("");
+                  setEndDate("");
+                  setFilterAsset("All");
+                  setFilterStrategy("All");
+                  setShowAllTime(false);
+                }}
+                className="text-[10px] bg-slate-800 hover:bg-slate-700 px-4 py-1.5 rounded-lg text-slate-400 uppercase font-black border border-slate-700"
+              >
+                Reset
+              </button>
             </div>
           </div>
 
@@ -265,7 +467,9 @@ const Dashboard = () => {
                   <th className="px-6 py-4 text-emerald-400">Entry</th>
                   <th className="px-6 py-4 text-rose-400">Exit</th>
                   <th className="px-6 py-4">Lot Size</th>
-                  <th className="px-6 py-4 text-right">PnL ({activeCurrency})</th>
+                  <th className="px-6 py-4 text-right">
+                    PnL ({activeCurrency})
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50 text-sm">
@@ -274,19 +478,52 @@ const Dashboard = () => {
                   const pnl = calculateFinalPnL(trade);
                   const currencySymbol = getCurrency(trade.asset);
                   return (
-                    <tr key={trade._id} className="hover:bg-emerald-500/[0.03] transition-colors group">
+                    <tr
+                      key={trade._id}
+                      className="hover:bg-emerald-500/[0.03] transition-colors group"
+                    >
                       <td className="px-6 py-4 text-slate-300 font-medium whitespace-nowrap">
-                        {dateObj.toLocaleDateString([], { month: "short", day: "2-digit", year: "numeric" })}
-                        <span className="block text-[10px] text-slate-500 mt-0.5">{dateObj.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                        {dateObj.toLocaleDateString([], {
+                          month: "short",
+                          day: "2-digit",
+                          year: "numeric",
+                        })}
+                        <span className="block text-[10px] text-slate-500 mt-0.5">
+                          {dateObj.toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
                       </td>
-                      <td className="px-6 py-4 font-black text-white uppercase tracking-tight">{trade.asset || "N/A"}</td>
+                      <td className="px-6 py-4 font-black text-white uppercase tracking-tight">
+                        {trade.asset || "N/A"}
+                      </td>
                       <td className="px-6 py-4">
-                        <span className={`inline-block px-3 py-1 rounded text-[10px] font-black ${trade.type === "buy" || trade.type === "sell" ? "bg-emerald-500/10 text-emerald-400" : "bg-slate-700 text-slate-300"}`}>{(trade.type || trade.signal || "N/A").toUpperCase()}</span>
+                        <span
+                          className={`inline-block px-3 py-1 rounded text-[10px] font-black ${trade.type === "buy" || trade.type === "sell" ? "bg-emerald-500/10 text-emerald-400" : "bg-slate-700 text-slate-300"}`}
+                        >
+                          {(trade.type || trade.signal || "N/A").toUpperCase()}
+                        </span>
                       </td>
-                      <td className="px-6 py-4 font-mono font-bold text-slate-200">{currencySymbol}{trade.entryPrice?.toLocaleString() || "--"}</td>
-                      <td className="px-6 py-4 font-mono font-bold text-slate-200">{currencySymbol}{trade.exitPrice?.toLocaleString() || "--"}</td>
-                      <td className="px-6 py-4 font-mono text-slate-400 text-xs">x{assetConfigs[trade.asset?.toUpperCase()] || 1}</td>
-                      <td className={`px-6 py-4 text-right font-black ${pnl > 0 ? "text-emerald-400" : pnl < 0 ? "text-rose-400" : "text-slate-600"}`}>{currencySymbol}{pnl.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                      <td className="px-6 py-4 font-mono font-bold text-slate-200">
+                        {currencySymbol}
+                        {trade.entryPrice?.toLocaleString() || "--"}
+                      </td>
+                      <td className="px-6 py-4 font-mono font-bold text-slate-200">
+                        {currencySymbol}
+                        {trade.exitPrice?.toLocaleString() || "--"}
+                      </td>
+                      <td className="px-6 py-4 font-mono text-slate-400 text-xs">
+                        x{assetConfigs[trade.asset?.toUpperCase()] || 1}
+                      </td>
+                      <td
+                        className={`px-6 py-4 text-right font-black ${pnl > 0 ? "text-emerald-400" : pnl < 0 ? "text-rose-400" : "text-slate-600"}`}
+                      >
+                        {currencySymbol}
+                        {pnl.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                        })}
+                      </td>
                     </tr>
                   );
                 })}
@@ -302,11 +539,21 @@ const Dashboard = () => {
 const StatCard = ({ title, value, icon, trend }) => (
   <div className="bg-[#1e293b] p-4 lg:p-6 rounded-2xl border border-slate-700 hover:border-slate-500 transition-all shadow-lg group">
     <div className="flex justify-between items-start mb-4">
-      <div className="p-2.5 bg-slate-900 rounded-xl group-hover:scale-110 transition-transform border border-slate-700">{icon}</div>
-      {trend && <span className="text-[10px] text-orange-400 bg-orange-500/10 px-2.5 py-1 rounded-full font-black uppercase tracking-tighter">{trend}</span>}
+      <div className="p-2.5 bg-slate-900 rounded-xl group-hover:scale-110 transition-transform border border-slate-700">
+        {icon}
+      </div>
+      {trend && (
+        <span className="text-[10px] text-orange-400 bg-orange-500/10 px-2.5 py-1 rounded-full font-black uppercase tracking-tighter">
+          {trend}
+        </span>
+      )}
     </div>
-    <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.15em]">{title}</p>
-    <h4 className="text-xl lg:text-3xl font-bold text-white mt-1 tracking-tight">{value}</h4>
+    <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.15em]">
+      {title}
+    </p>
+    <h4 className="text-xl lg:text-3xl font-bold text-white mt-1 tracking-tight">
+      {value}
+    </h4>
   </div>
 );
 
