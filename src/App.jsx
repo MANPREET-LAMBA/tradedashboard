@@ -141,9 +141,23 @@ const Dashboard = () => {
   }, [ filterAsset, filterStrategy, filterStatus, startDate, endDate, baseurl]);
 
   const calculateFinalPnL = (trade) => {
-    const lotSize = assetConfigs[trade.asset?.toUpperCase()] || 1;
-    return (trade.profitPoints || 0) * lotSize;
-  };
+  const lotSize = assetConfigs[trade.asset?.toUpperCase()] || 1;
+
+  const entry = Number(trade.entryPrice);
+  const exit = Number(trade.exitPrice);
+
+  if (!entry || !exit) return 0;
+
+  let points = 0;
+
+  if (trade.type === "buy") {
+    points = exit - entry;
+  } else if (trade.type === "sell") {
+    points = entry - exit;
+  }
+
+  return points * lotSize;
+};
 
   const filteredTrades = trades.filter((t) => {
     const matchAsset = filterAsset === "All" || t.asset === filterAsset;
@@ -180,6 +194,11 @@ const Dashboard = () => {
     });
     return maxDD;
   };
+
+  const getTradeTime = (trade) => {
+  const time = trade.entryTime || trade.timestamp;
+  return time ? new Date(time).getTime() : 0;
+};
 
   const totalPnL = filteredTrades.reduce((acc, curr) => acc + calculateFinalPnL(curr), 0);
   const maxDrawdown = calculateMaxDrawdown();
@@ -324,26 +343,82 @@ const Dashboard = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50 text-sm">
-                {filteredTrades.map((trade) => {
-                  const dateObj = new Date(trade.entryTime || trade.timestamp);
-                  const pnl = calculateFinalPnL(trade);
-                  const currencySymbol = getCurrency(trade.asset);
-                  return (
-                    <tr key={trade._id} className="hover:bg-emerald-500/[0.03] transition-colors group">
-                      <td className="px-6 py-4 text-slate-300 font-medium whitespace-nowrap">
-                        {dateObj.toLocaleDateString([], { month: "short", day: "2-digit", year: "numeric" })}
-                      </td>
-                      <td className="px-6 py-4 font-black text-white uppercase tracking-tight">{trade.asset || "N/A"}</td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-block px-3 py-1 rounded text-[10px] font-black ${trade.type === "buy" || trade.type === "sell" ? "bg-emerald-500/10 text-emerald-400" : "bg-slate-700 text-slate-300"}`}>{(trade.type || trade.signal || "N/A").toUpperCase()}</span>
-                      </td>
-                      <td className="px-6 py-4 font-mono font-bold text-slate-200">{currencySymbol}{trade.entryPrice?.toLocaleString() || "--"}</td>
-                      <td className="px-6 py-4 font-mono font-bold text-slate-200">{currencySymbol}{trade.exitPrice?.toLocaleString() || "--"}</td>
-                      <td className="px-6 py-4 font-mono text-slate-400 text-xs">x{assetConfigs[trade.asset?.toUpperCase()] || 1}</td>
-                      <td className={`px-6 py-4 text-right font-black ${pnl > 0 ? "text-emerald-400" : pnl < 0 ? "text-rose-400" : "text-slate-600"}`}>{currencySymbol}{pnl.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    </tr>
-                  );
-                })}
+                {[...filteredTrades]
+  .sort((a, b) => getTradeTime(b) - getTradeTime(a)) // 🔥 Recent trades first
+  .map((trade) => {
+    const dateObj = new Date(trade.entryTime || trade.timestamp);
+    const pnl = calculateFinalPnL(trade);
+    const currencySymbol = getCurrency(trade.asset);
+
+    return (
+      <tr
+        key={trade._id}
+        className="hover:bg-emerald-500/[0.03] transition-colors group"
+      >
+        {/* Date */}
+        <td className="px-6 py-4 text-slate-300 font-medium whitespace-nowrap">
+          {dateObj.toLocaleDateString([], {
+            month: "short",
+            day: "2-digit",
+            year: "numeric",
+          })}
+        </td>
+
+        {/* Asset */}
+        <td className="px-6 py-4 font-black text-white uppercase tracking-tight">
+          {trade.asset || "N/A"}
+        </td>
+
+        {/* Type */}
+        <td className="px-6 py-4">
+          <span
+            className={`inline-block px-3 py-1 rounded text-[10px] font-black ${
+              trade.type === "buy" || trade.type === "sell"
+                ? "bg-emerald-500/10 text-emerald-400"
+                : "bg-slate-700 text-slate-300"
+            }`}
+          >
+            {(trade.type || trade.signal || "N/A").toUpperCase()}
+          </span>
+        </td>
+
+        {/* Entry Price */}
+        <td className="px-6 py-4 font-mono font-bold text-slate-200">
+          {currencySymbol}
+          {Number(trade.entryPrice)?.toLocaleString() || "--"}
+        </td>
+
+        {/* Exit Price */}
+        <td className="px-6 py-4 font-mono font-bold text-slate-200">
+          {currencySymbol}
+          {Number(trade.exitPrice)?.toLocaleString() || "--"}
+        </td>
+
+        {/* Lot Multiplier */}
+        <td className="px-6 py-4 font-mono text-slate-400 text-xs">
+          x{assetConfigs[trade.asset?.toUpperCase()] || 1}
+        </td>
+
+        {/* PnL */}
+        <td
+          className={`px-6 py-4 text-right font-black ${
+            pnl > 0
+              ? "text-emerald-400"
+              : pnl < 0
+              ? "text-rose-400"
+              : "text-slate-600"
+          }`}
+        >
+          {currencySymbol}
+          {pnl.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+        </td>
+      </tr>
+    );
+  })}
+
               </tbody>
             </table>
           </div>
