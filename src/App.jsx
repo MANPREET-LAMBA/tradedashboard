@@ -32,12 +32,11 @@ const Dashboard = () => {
   const [endDate, setEndDate] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isStrategyOpen, setIsStrategyOpen] = useState(true);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
 
-  const baseurl = "http://localhost:5001";
+
+  // const baseurl = "http://localhost:5001";
+  const baseurl = "https://trademangerbk.onrender.com";
   const [uniqueStrategies, setUniqueStrategies] = useState([]);
-  // const uniqueAssets = [...new Set(trades.map((t) => t.asset).filter(Boolean))];
   const [uniqueAssets,uniqueAssetsset] = useState([])
 
    useEffect(() => {
@@ -124,8 +123,6 @@ const Dashboard = () => {
         setIsLoading(true);
         const res = await axios.get(`${baseurl}/api/trades`, {
           params: {
-            page: page,
-            limit: 50,
             asset: filterAsset,
             strategy: filterStrategy,
             status: filterStatus,
@@ -134,7 +131,6 @@ const Dashboard = () => {
           },
         });
         setTrades(res.data.trades || []);
-        if (res.data.hasMore !== undefined) setHasMore(res.data.hasMore);
       } catch (err) {
         console.error("Error fetching trades", err);
       } finally {
@@ -142,7 +138,7 @@ const Dashboard = () => {
       }
     };
     fetchTrades();
-  }, [page, filterAsset, filterStrategy, filterStatus, startDate, endDate, baseurl]);
+  }, [ filterAsset, filterStrategy, filterStatus, startDate, endDate, baseurl]);
 
   const calculateFinalPnL = (trade) => {
     const lotSize = assetConfigs[trade.asset?.toUpperCase()] || 1;
