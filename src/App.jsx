@@ -84,7 +84,7 @@ const Dashboard = () => {
   };
 
   const getCurrency = (assetName) => {
-    const indianAssets = ["NIFTY", "BANKNIFTY", "FINNIFTY", "CRUDEOIL", "GOLD", "SILVER", "NATURAL GAS"];
+    const indianAssets = ["NIFTY", "BANKNIFTY", "FINNIFTY", "CRUDEOIL", "GOLD", "SILVER", "NATURAL GAS","NATURAL GAS MINI"];
     if (assetName === "All" || !assetName) return "₹";
     return indianAssets.includes(assetName.toUpperCase()) ? "₹" : "$";
   };
